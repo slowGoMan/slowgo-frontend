@@ -27,7 +27,12 @@ export default function App() {
     setLoading(true);
     setError(null);
 
-    let query = supabase.from(TABLE).select('*').order('received_at', { ascending: false });
+    let query = supabase
+      .from(TABLE)
+      .select('*')
+      .order('service_date', { ascending: false })
+      .order('scheduled_time', { ascending: false, nullsFirst: false })
+      .order('received_at', { ascending: false });
 
     const now = new Date();
     if (timeFilter === '24h') {
