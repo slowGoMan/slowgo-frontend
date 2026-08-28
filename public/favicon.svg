@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 160">
-  <rect width="120" height="160" rx="26" fill="#022c22"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <rect width="120" height="120" rx="24" fill="#022c22"/>
   <g transform="translate(10,10)">
-    <path d="M 64 20 A 24 24 0 0 0 64 68 A 24 24 0 0 1 64 116" fill="none" stroke="#10b981" stroke-width="28" stroke-linecap="round" opacity="0.3"/>
-    <path d="M 64 20 A 24 24 0 0 0 64 68 A 24 24 0 0 1 64 116" fill="none" stroke="#10b981" stroke-width="18" stroke-linecap="round"/>
-    <path d="M 64 20 A 24 24 0 0 0 64 68 A 24 24 0 0 1 64 116" fill="none" stroke="#022c22" stroke-width="2.5" stroke-dasharray="3 6" stroke-linecap="round"/>
-    <circle cx="64" cy="20" r="17" fill="#fbbf24" opacity="0.3"/>
-    <circle cx="64" cy="20" r="8" fill="#fbbf24"/>
+    <path d="M 55 18 A 28 20 0 0 0 55 50 A 28 20 0 0 1 55 82" fill="none" stroke="#10b981" stroke-width="30" stroke-linecap="round" opacity="0.3"/>
+    <path d="M 55 18 A 28 20 0 0 0 55 50 A 28 20 0 0 1 55 82" fill="none" stroke="#10b981" stroke-width="20" stroke-linecap="round"/>
+    <path d="M 55 18 A 28 20 0 0 0 55 50 A 28 20 0 0 1 55 82" fill="none" stroke="#022c22" stroke-width="3" stroke-dasharray="3 6" stroke-linecap="round"/>
+    <circle cx="55" cy="18" r="14" fill="#fbbf24" opacity="0.3"/>
+    <circle cx="55" cy="18" r="7" fill="#fbbf24"/>
   </g>
 </svg>
