@@ -36,10 +36,10 @@ export default function StatsBar({ alerts }) {
       </div>
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
         <span className="text-[11px] font-bold text-slate-400 uppercase">Primary Culprit</span>
-        <p className="text-2xl font-black text-white mt-1 truncate">
-          {culprit ? `${incidentTypeLabel(culprit.type)}` : '—'}
-          {culprit && <span className="text-sm text-slate-400 font-bold"> ({culprit.pct}%)</span>}
+        <p className="text-lg font-black text-white mt-1.5 leading-tight break-words">
+          {culprit ? incidentTypeLabel(culprit.type) : '—'}
         </p>
+        {culprit && <p className="text-xs text-slate-400 font-bold">{culprit.pct}% of incidents</p>}
       </div>
     </div>
   );
