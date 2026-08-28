@@ -31,22 +31,13 @@ function formatTime(incident) {
   });
 }
 
-export default function IncidentFeed({ alerts, selectedStation, onClearStation, loading }) {
+export default function IncidentFeed({ alerts, loading }) {
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 flex-1 flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
           <Clock className="w-4 h-4 text-emerald-400" /> Incident Timeline
         </h3>
-
-        {selectedStation && (
-          <button
-            onClick={onClearStation}
-            className="text-[11px] font-bold text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700"
-          >
-            {selectedStation.name} &times;
-          </button>
-        )}
       </div>
 
       <div className="space-y-3 overflow-y-auto max-h-[500px] pr-2">

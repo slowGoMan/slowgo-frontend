@@ -104,18 +104,26 @@ export default function App() {
         <RailMap alerts={filteredAlerts} selectedStation={selectedStation} onSelectStation={setSelectedStation} />
 
         <div className="lg:col-span-7 flex flex-col gap-6">
-          <StatsBar alerts={filteredAlerts} />
-          <IncidentFeed
-            alerts={feedAlerts}
-            selectedStation={selectedStation}
-            onClearStation={() => setSelectedStation(null)}
-            loading={loading}
-          />
+          {selectedStation && (
+            <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-2xl px-4 py-3 flex items-center justify-between">
+              <span className="text-sm font-bold text-emerald-300">
+                Viewing <span className="text-white">{selectedStation.name}</span> only
+              </span>
+              <button
+                onClick={() => setSelectedStation(null)}
+                className="text-[11px] font-bold text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700"
+              >
+                Clear &times;
+              </button>
+            </div>
+          )}
+          <StatsBar alerts={feedAlerts} />
+          <IncidentFeed alerts={feedAlerts} loading={loading} />
         </div>
       </main>
 
       <section className="max-w-7xl mx-auto mt-6">
-        <Heatmap alerts={filteredAlerts} timeFilter={timeFilter} />
+        <Heatmap alerts={feedAlerts} timeFilter={timeFilter} />
       </section>
     </div>
   );
