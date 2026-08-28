@@ -1,4 +1,5 @@
-import { Train, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import Logo from './Logo';
 
 export default function Header({ activeCount, loading, onRefresh }) {
   const allClear = activeCount === 0;
@@ -7,7 +8,7 @@ export default function Header({ activeCount, loading, onRefresh }) {
     <header className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 pb-6 border-b border-slate-800">
       <div className="flex items-center gap-3">
         <div className="bg-emerald-500/20 p-2.5 rounded-2xl border border-emerald-500/40">
-          <Train className="w-8 h-8 text-emerald-400" />
+          <Logo className="w-8 h-8" />
         </div>
         <div>
           <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
