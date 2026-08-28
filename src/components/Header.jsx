@@ -28,7 +28,7 @@ export default function Header({ activeCount, loading, onRefresh }) {
           }`}
         >
           <span className={`w-2 h-2 rounded-full ${allClear ? 'bg-emerald-400' : 'bg-rose-400 animate-pulse'}`} />
-          {allClear ? 'All Clear' : `${activeCount} Active Today`}
+          {allClear ? 'All Clear Today' : `${activeCount} Active Today`}
         </div>
 
         <button

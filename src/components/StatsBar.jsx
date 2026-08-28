@@ -28,7 +28,9 @@ export default function StatsBar({ alerts }) {
       </div>
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
         <span className="text-[11px] font-bold text-slate-400 uppercase">Cancellations</span>
-        <p className="text-2xl font-black text-rose-400 mt-1">{cancellations}</p>
+        <p className={`text-2xl font-black mt-1 ${cancellations > 0 ? 'text-rose-400' : 'text-white'}`}>
+          {cancellations}
+        </p>
       </div>
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
         <span className="text-[11px] font-bold text-slate-400 uppercase">Avg Delay</span>

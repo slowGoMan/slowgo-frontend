@@ -63,12 +63,14 @@ export function makeBucketizer(scores) {
   };
 }
 
+// Same warm severity language as the rail map's station dots (yellow -> amber -> rose),
+// extended with an orange step so the 5-bucket heatmap scale reads as one continuous ramp.
 export const BUCKET_STYLE = {
   0: { bg: 'bg-slate-800/30', border: 'border-slate-800', text: 'text-slate-600' },
-  1: { bg: 'bg-rose-500/10', border: 'border-rose-500/20', text: 'text-slate-300' },
-  2: { bg: 'bg-rose-500/30', border: 'border-rose-500/40', text: 'text-slate-100' },
-  3: { bg: 'bg-rose-500/50', border: 'border-rose-500/60', text: 'text-slate-100' },
-  4: { bg: 'bg-rose-500/75', border: 'border-rose-500', text: 'text-white' },
+  1: { bg: 'bg-yellow-400/15', border: 'border-yellow-400/30', text: 'text-slate-200' },
+  2: { bg: 'bg-amber-500/30', border: 'border-amber-500/45', text: 'text-slate-100' },
+  3: { bg: 'bg-orange-500/45', border: 'border-orange-500/60', text: 'text-slate-100' },
+  4: { bg: 'bg-rose-500/70', border: 'border-rose-500', text: 'text-white' },
 };
 
 // --- Day-of-week x commute-period grid ---------------------------------
