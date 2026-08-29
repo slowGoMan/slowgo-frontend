@@ -1,0 +1,34 @@
+# .github/workflows/gtfs-refresh.yml
+# Weekly Barrie-line GTFS refresh into Supabase.
+# Free: public repos have unlimited Actions minutes; a run that hits a 304
+# finishes in seconds. Heavy unzip happens on the runner, never in the Worker.
+
+name: GTFS Refresh (Barrie)
+
+on:
+  schedule:
+    - cron: "0 8 * * 0"   # Sundays 08:00 UTC (~03:00/04:00 Toronto)
+  workflow_dispatch:        # manual "Run workflow" button for testing
+
+concurrency:
+  group: gtfs-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Refresh GTFS
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/refresh_gtfs.py
