@@ -14,6 +14,11 @@ dist-ssr
 .env
 !.env.example
 
+# Personal email exports used for parser development - contain the
+# recipient's real address in the body text, never for the repo (especially
+# once public).
+sample-emails/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

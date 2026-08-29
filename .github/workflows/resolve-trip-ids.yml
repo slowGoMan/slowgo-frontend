@@ -1,0 +1,39 @@
+# .github/workflows/resolve-trip-ids.yml
+# Periodically fills go_train_delays.trip_id by calling the resolve_trip_ids()
+# Postgres function (supabase/resolve_trip_ids.sql) via Supabase's RPC
+# endpoint. Just one curl call - no runtime/dependency setup needed, so
+# each run is fast regardless of how often it's scheduled.
+
+name: Resolve Trip IDs (Barrie)
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"   # every 20 minutes
+  workflow_dispatch:          # manual "Run workflow" button for testing
+
+concurrency:
+  group: resolve-trip-ids
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call resolve_trip_ids() via Supabase RPC
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            "$SUPABASE_URL/rest/v1/rpc/resolve_trip_ids" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          body=$(echo "$response" | sed '$d')
+          code=$(echo "$response" | tail -n1)
+          echo "HTTP $code - resolved $body row(s)"
+          if [ "$code" -ge 400 ]; then
+            echo "::error::resolve_trip_ids RPC failed with HTTP $code: $body"
+            exit 1
+          fi
