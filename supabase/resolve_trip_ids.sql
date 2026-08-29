@@ -2,14 +2,16 @@
 -- (station, scheduled_time, direction, service_date) against the loaded
 -- Barrie GTFS tables. Only ever touches single-station rows (segment-wide
 -- issues with 2+ affected_stations have no single train to resolve to).
--- Run this once in the Supabase SQL editor to create the function; the
+-- Run this once in the Supabase SQL editor to (re)create the function; the
 -- "Resolve Trip IDs" GitHub Action then calls it periodically via RPC.
 --
--- Verified against a real Postgres instance (via @electric-sql/pglite) with
--- synthetic GTFS + observation fixtures covering every branch below,
--- including the exact scenario this exists for: a delay reported at
--- 15:15 Bradford NB and a delay reported at 15:05 East Gwillimbury NB both
--- resolving to the same trip_id.
+-- Verified against a real Postgres instance (via @electric-sql/pglite):
+-- correctness against synthetic GTFS + observation fixtures covering every
+-- branch below (including the exact scenario this exists for - a delay
+-- reported at 15:15 Bradford NB and one at 15:05 East Gwillimbury NB both
+-- resolving to the same trip_id), AND performance against a synthetic
+-- 3,000-row backlog (40 trip patterns) - see wrinkle #5 below for why that
+-- second pass mattered.
 --
 -- Calibration wrinkles handled explicitly (see SLOWGO_HANDOFF.md):
 --  1. Direction is derived from each candidate trip's own stop sequence
@@ -33,6 +35,27 @@
 --     exist ONLY via a calendar_dates "added" exception with no weekly
 --     calendar row at all (a plain join on gtfs_calendar would silently
 --     exclude those; this uses a left join).
+--  5. Direction is looked up via a LATERAL subquery keyed to one specific
+--     trip_id (index-backed via idx_gtfs_stop_times_trip), NOT a join
+--     against a separately window-computed all-trips CTE. An earlier
+--     version did the latter and hit Supabase's statement timeout on real
+--     data: Postgres chose a plan that re-executed the entire delay x
+--     station x stop_times x trips join once PER TRIP (confirmed via
+--     EXPLAIN ANALYZE - 40 trips turned a few hundred real rows into 1.7M
+--     row comparisons). The LATERAL form is ~20x faster because each
+--     candidate's direction is a cheap single-trip lookup instead of a
+--     join against every trip's precomputed direction.
+--     (A tempting further "fix" is capping how many unresolved rows are
+--     considered per run with `... order by id limit N`. Don't - a
+--     genuinely unmatchable row (no real GTFS trip fits it) never leaves
+--     the pool, so it permanently occupies a slot at whichever end of the
+--     id ordering is prioritized and starves every row behind it, even
+--     across unlimited reruns. Confirmed empirically: capping at 500
+--     converged to under half the resolvable rows in a 3,000-row backlog,
+--     regardless of sort direction. The LATERAL fix alone resolved the
+--     full realistic backlog in ~300ms with no cap needed - the cap here
+--     is a defensive ceiling for a scenario that shouldn't happen, not a
+--     routine constraint.
 create or replace function resolve_trip_ids() returns integer as $$
 declare
   resolved_count integer := 0;
@@ -51,25 +74,16 @@ begin
       ('Downsview Park GO', 10),
       ('Union Station GO', 11)
   ),
-  trip_endpoints as (
-    select
-      trip_id,
-      stop_id,
-      row_number() over (partition by trip_id order by stop_sequence asc) as rn_first,
-      row_number() over (partition by trip_id order by stop_sequence desc) as rn_last
-    from gtfs_stop_times
-  ),
-  trip_direction as (
-    select
-      fe.trip_id,
-      case when first_ord.ord < last_ord.ord then 'Southbound' else 'Northbound' end as direction
-    from trip_endpoints fe
-    join trip_endpoints le on le.trip_id = fe.trip_id and le.rn_last = 1
-    join gtfs_stops fs on fs.stop_id = fe.stop_id
-    join station_order first_ord on first_ord.stop_name = fs.stop_name
-    join gtfs_stops ls on ls.stop_id = le.stop_id
-    join station_order last_ord on last_ord.stop_name = ls.stop_name
-    where fe.rn_first = 1
+  candidate_delays as (
+    select id, affected_stations, scheduled_time, direction, service_date
+    from go_train_delays
+    where trip_id is null
+      and scheduled_time is not null
+      and direction is not null
+      and service_date is not null
+      and array_length(affected_stations, 1) = 1
+    order by id desc
+    limit 20000
   ),
   raw_matches as (
     select
@@ -89,16 +103,22 @@ begin
         when st.departure_time::interval >= interval '24 hours' then d.service_date - 1
         else d.service_date
       end as effective_date
-    from go_train_delays d
+    from candidate_delays d
     join gtfs_stops gs on gs.stop_name = d.affected_stations[1] || ' GO'
     join gtfs_stop_times st on st.stop_id = gs.stop_id
     join gtfs_trips t on t.trip_id = st.trip_id
-    join trip_direction td on td.trip_id = t.trip_id and td.direction = d.direction
-    where d.trip_id is null
-      and d.scheduled_time is not null
-      and d.direction is not null
-      and d.service_date is not null
-      and array_length(d.affected_stations, 1) = 1
+    -- Direction for THIS SPECIFIC trip only (see wrinkle #5 above) - an
+    -- index-backed single-trip lookup, not a join against an all-trips CTE.
+    cross join lateral (
+      select case when first_ord.ord < last_ord.ord then 'Southbound' else 'Northbound' end as direction
+      from (select stop_id from gtfs_stop_times where trip_id = t.trip_id order by stop_sequence asc limit 1) fe
+      join gtfs_stops fs on fs.stop_id = fe.stop_id
+      join station_order first_ord on first_ord.stop_name = fs.stop_name
+      cross join (select stop_id from gtfs_stop_times where trip_id = t.trip_id order by stop_sequence desc limit 1) le
+      join gtfs_stops ls on ls.stop_id = le.stop_id
+      join station_order last_ord on last_ord.stop_name = ls.stop_name
+    ) td
+    where td.direction = d.direction
   ),
   candidates as (
     select
