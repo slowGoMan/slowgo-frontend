@@ -30,6 +30,12 @@ export default function App() {
     let query = supabase
       .from(TABLE)
       .select('*')
+      // Pure marketing/weather broadcasts the worker can now also ingest -
+      // never real signal, so excluded before they even reach the client.
+      // scope.is.null keeps pre-rewrite rows (written before this column
+      // existed) rather than silently dropping them: neq alone would, since
+      // SQL's `column != 'x'` is neither true nor false for a null column.
+      .or('scope.is.null,scope.neq.not_relevant')
       .order('service_date', { ascending: false })
       .order('scheduled_time', { ascending: false, nullsFirst: false })
       .order('received_at', { ascending: false });
