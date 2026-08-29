@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, TABLE } from './lib/supabase';
-import { isRushHour } from './lib/constants';
+import { isRushHour, torontoToday } from './lib/constants';
 import Header from './components/Header';
 import Filters from './components/Filters';
 import RailMap from './components/RailMap';
@@ -42,7 +42,12 @@ export default function App() {
       .order('received_at', { ascending: false });
 
     const now = new Date();
-    if (timeFilter === '24h') {
+    if (timeFilter === 'today') {
+      // Calendar day in Toronto, not a rolling 24h window - "Today" and
+      // "Last 24h" answer different questions (this can be a much shorter
+      // window right after midnight, or the same ~24h window right before it).
+      query = query.eq('service_date', torontoToday());
+    } else if (timeFilter === '24h') {
       query = query.gte('received_at', new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString());
     } else if (timeFilter === '7d') {
       query = query.gte('received_at', new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString());
@@ -81,7 +86,7 @@ export default function App() {
   }, [filteredAlerts, selectedStation]);
 
   const activeToday = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = torontoToday();
     return alerts.filter((a) => a.service_date === today && a.status !== 'resolved').length;
   }, [alerts]);
 

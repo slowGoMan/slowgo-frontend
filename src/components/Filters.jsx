@@ -1,6 +1,7 @@
 import { INCIDENT_TYPES, incidentTypeLabel } from '../lib/constants';
 
 const TIME_FILTERS = [
+  { id: 'today', label: 'Today' },
   { id: '24h', label: 'Last 24h' },
   { id: '7d', label: '7 Days' },
   { id: '30d', label: '30 Days' },

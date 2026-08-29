@@ -52,3 +52,11 @@ export function incidentTypeLabel(type) {
 export function isRushHour(commutePeriod) {
   return typeof commutePeriod === 'string' && commutePeriod.toUpperCase().includes('PEAK');
 }
+
+// Matches the DB's generated `service_date` column - NOT
+// `new Date().toISOString().slice(0, 10)`, which gives UTC's calendar date
+// and is wrong for several hours every evening Toronto time (UTC rolls to
+// tomorrow while it's still today locally).
+export function torontoToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto' }).format(new Date());
+}
