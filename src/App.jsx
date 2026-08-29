@@ -7,6 +7,7 @@ import RailMap from './components/RailMap';
 import StatsBar from './components/StatsBar';
 import IncidentFeed from './components/IncidentFeed';
 import Heatmap from './components/Heatmap';
+import TripTracker from './components/TripTracker';
 
 export default function App() {
   const [alerts, setAlerts] = useState([]);
@@ -127,6 +128,10 @@ export default function App() {
           <IncidentFeed alerts={feedAlerts} loading={loading} />
         </div>
       </main>
+
+      <section className="max-w-7xl mx-auto mt-6">
+        <TripTracker alerts={filteredAlerts} />
+      </section>
 
       <section className="max-w-7xl mx-auto mt-6">
         <Heatmap alerts={feedAlerts} timeFilter={timeFilter} />
