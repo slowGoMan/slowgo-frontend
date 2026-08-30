@@ -1,4 +1,5 @@
 import { incidentTypeLabel } from '../lib/constants';
+import { impactMinutes } from '../lib/heatmap';
 
 function primaryCulprit(alerts) {
   if (alerts.length === 0) return null;
@@ -11,6 +12,13 @@ function primaryCulprit(alerts) {
   return { type, pct: Math.round((count / alerts.length) * 100) };
 }
 
+function formatMinutes(mins) {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
 export default function StatsBar({ alerts }) {
   const cancellations = alerts.filter((a) => a.is_cancellation).length;
   const delayedAlerts = alerts.filter((a) => !a.is_cancellation && (a.max_delay_mins || 0) > 0);
@@ -19,12 +27,23 @@ export default function StatsBar({ alerts }) {
       ? Math.round(delayedAlerts.reduce((acc, curr) => acc + (curr.max_delay_mins || 0), 0) / delayedAlerts.length)
       : 0;
   const culprit = primaryCulprit(alerts);
+  const totalDelayMinutes = alerts.reduce((acc, a) => acc + impactMinutes(a), 0);
+  const tripsAffected = new Set(alerts.filter((a) => a.trip_id).map((a) => a.trip_id)).size;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
-        <span className="text-[11px] font-bold text-slate-400 uppercase">Total Incidents</span>
+        <span className="text-[11px] font-bold text-slate-400 uppercase">Total Alerts</span>
         <p className="text-2xl font-black text-white mt-1">{alerts.length}</p>
+      </div>
+      <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+        <span className="text-[11px] font-bold text-slate-400 uppercase">Trips Affected</span>
+        <p className="text-2xl font-black text-white mt-1">{tripsAffected}</p>
+        <p className="text-[10px] text-slate-500 font-medium mt-0.5">confirmed via schedule match</p>
+      </div>
+      <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
+        <span className="text-[11px] font-bold text-slate-400 uppercase">Total Delay Time</span>
+        <p className="text-2xl font-black text-amber-400 mt-1">{formatMinutes(totalDelayMinutes)}</p>
       </div>
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
         <span className="text-[11px] font-bold text-slate-400 uppercase">Cancellations</span>

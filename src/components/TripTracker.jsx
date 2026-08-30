@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { ArrowUp, ArrowDown, TrendingUp, XCircle } from 'lucide-react';
 import { BUCKET_STYLE } from '../lib/heatmap';
 import { buildTripGroups, delaySeverityBucket } from '../lib/trips';
 import { directionLabel } from '../lib/constants';
+
+const DEFAULT_VISIBLE = 6;
 
 function formatTime(scheduledTime) {
   return scheduledTime ? scheduledTime.slice(0, 5) : '--:--';
@@ -66,10 +69,14 @@ function TripCard({ trip }) {
 
 export default function TripTracker({ alerts }) {
   const trips = buildTripGroups(alerts);
+  const [expanded, setExpanded] = useState(false);
 
   if (trips.length === 0) {
     return null;
   }
+
+  const visibleTrips = expanded ? trips : trips.slice(0, DEFAULT_VISIBLE);
+  const remaining = trips.length - visibleTrips.length;
 
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6">
@@ -79,10 +86,26 @@ export default function TripTracker({ alerts }) {
         show.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {trips.map((trip) => (
+        {visibleTrips.map((trip) => (
           <TripCard key={trip.tripId} trip={trip} />
         ))}
       </div>
+      {remaining > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full mt-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-800/60 border border-slate-700 hover:text-white hover:border-slate-600 transition-colors"
+        >
+          Show {remaining} more trip{remaining === 1 ? '' : 's'}
+        </button>
+      )}
+      {expanded && trips.length > DEFAULT_VISIBLE && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="w-full mt-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide text-slate-400 bg-slate-800/60 border border-slate-700 hover:text-white hover:border-slate-600 transition-colors"
+        >
+          Show fewer
+        </button>
+      )}
     </div>
   );
 }
