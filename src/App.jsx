@@ -14,7 +14,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [timeFilter, setTimeFilter] = useState('7d');
+  const [timeFilter, setTimeFilter] = useState('today');
   const [rushHourOnly, setRushHourOnly] = useState(false);
   const [reasonFilter, setReasonFilter] = useState('all');
   const [directionFilter, setDirectionFilter] = useState('all');
