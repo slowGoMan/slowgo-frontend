@@ -19,8 +19,20 @@ function formatMinutes(mins) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+// A single cancelled train reported from several stations (each its own
+// email) would otherwise count as several cancellations. Rows with a
+// resolved trip_id collapse to one count per distinct trip; a cancellation
+// with no trip_id yet (resolver hasn't run, or GTFS couldn't match it) is
+// counted on its own rather than assumed to share an identity with another.
+function distinctCancelledTrips(cancelledAlerts) {
+  const withTrip = cancelledAlerts.filter((a) => a.trip_id);
+  const withoutTrip = cancelledAlerts.filter((a) => !a.trip_id);
+  return new Set(withTrip.map((a) => a.trip_id)).size + withoutTrip.length;
+}
+
 export default function StatsBar({ alerts }) {
-  const cancellations = alerts.filter((a) => a.is_cancellation).length;
+  const cancelledAlerts = alerts.filter((a) => a.is_cancellation);
+  const cancellations = distinctCancelledTrips(cancelledAlerts);
   const delayedAlerts = alerts.filter((a) => !a.is_cancellation && (a.max_delay_mins || 0) > 0);
   const avgDelay =
     delayedAlerts.length > 0
@@ -50,6 +62,11 @@ export default function StatsBar({ alerts }) {
         <p className={`text-2xl font-black mt-1 ${cancellations > 0 ? 'text-rose-400' : 'text-white'}`}>
           {cancellations}
         </p>
+        {cancelledAlerts.length !== cancellations && (
+          <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+            {cancelledAlerts.length} notice{cancelledAlerts.length === 1 ? '' : 's'} received
+          </p>
+        )}
       </div>
       <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl">
         <span className="text-[11px] font-bold text-slate-400 uppercase">Avg Delay</span>
