@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, TABLE } from './lib/supabase';
 import { isRushHour, torontoToday } from './lib/constants';
+import { dedupeToLatestObservations } from './lib/heatmap';
 import Header from './components/Header';
 import Filters from './components/Filters';
 import RailMap from './components/RailMap';
@@ -87,8 +88,12 @@ export default function App() {
 
   const activeToday = useMemo(() => {
     const today = torontoToday();
-    return alerts.filter((a) => a.service_date === today && a.status !== 'resolved').length;
+    const todays = alerts.filter((a) => a.service_date === today);
+    return dedupeToLatestObservations(todays).filter((a) => a.status !== 'resolved').length;
   }, [alerts]);
+
+  const dedupedFilteredAlerts = useMemo(() => dedupeToLatestObservations(filteredAlerts), [filteredAlerts]);
+  const dedupedFeedAlerts = useMemo(() => dedupeToLatestObservations(feedAlerts), [feedAlerts]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
@@ -113,7 +118,7 @@ export default function App() {
       )}
 
       <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 mt-6">
-        <RailMap alerts={filteredAlerts} selectedStation={selectedStation} onSelectStation={setSelectedStation} />
+        <RailMap alerts={dedupedFilteredAlerts} selectedStation={selectedStation} onSelectStation={setSelectedStation} />
 
         <div className="lg:col-span-7 flex flex-col gap-6">
           {selectedStation && (
@@ -139,7 +144,7 @@ export default function App() {
       </section>
 
       <section className="max-w-7xl mx-auto mt-6">
-        <Heatmap alerts={feedAlerts} timeFilter={timeFilter} />
+        <Heatmap alerts={dedupedFeedAlerts} timeFilter={timeFilter} />
       </section>
     </div>
   );

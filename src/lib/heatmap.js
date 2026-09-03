@@ -22,6 +22,32 @@ export function impactMinutes(alert) {
   return alert.is_cancellation ? CANCELLATION_IMPACT_MINS : alert.max_delay_mins || 0;
 }
 
+// GO revises its own estimate for the same station stop over time (e.g. an
+// initial "6 min late" email followed by a later "15 min late" one, or a
+// delay later escalated to a full cancellation) - each is a genuinely
+// separate email and stays in the raw feed/timeline, but summing every one
+// of them into an aggregate stat double- (or triple-) counts what is really
+// one real-world delay. This keeps only the latest (by received_at) row per
+// observation_key - the worker's station+direction+time+date identity for a
+// single stop - so aggregates reflect GO's most current word on each stop.
+// Rows without one (segment-wide/multi-station alerts, which have no single
+// station to key on) pass through untouched, one count each.
+export function dedupeToLatestObservations(alerts) {
+  const latestByKey = new Map();
+  const passthrough = [];
+  for (const a of alerts) {
+    if (!a.observation_key) {
+      passthrough.push(a);
+      continue;
+    }
+    const existing = latestByKey.get(a.observation_key);
+    if (!existing || new Date(a.received_at) > new Date(existing.received_at)) {
+      latestByKey.set(a.observation_key, a);
+    }
+  }
+  return [...latestByKey.values(), ...passthrough];
+}
+
 // Parse a 'YYYY-MM-DD' service_date as a local date (avoids the UTC-midnight
 // shift you'd get from `new Date('2026-08-27')` in a negative-offset timezone).
 export function parseServiceDate(dateStr) {

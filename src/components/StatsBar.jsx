@@ -1,5 +1,5 @@
 import { incidentTypeLabel } from '../lib/constants';
-import { impactMinutes } from '../lib/heatmap';
+import { impactMinutes, dedupeToLatestObservations } from '../lib/heatmap';
 
 function primaryCulprit(alerts) {
   if (alerts.length === 0) return null;
@@ -59,16 +59,23 @@ function StatCard({ label, value, valueClassName = 'text-white', subtext, childr
 }
 
 export default function StatsBar({ alerts }) {
+  // Total Alerts and Station Cancellations are deliberately raw (they exist
+  // specifically to show notice volume) - everything else here represents a
+  // real-world quantity, so it's computed from GO's latest word per station
+  // stop, not summed across every revision of the same delay estimate.
+  const dedupedAlerts = dedupeToLatestObservations(alerts);
+
   const cancelledAlerts = alerts.filter((a) => a.is_cancellation);
-  const tripsCancelled = distinctCancelledTrips(cancelledAlerts);
-  const delayedAlerts = alerts.filter((a) => !a.is_cancellation && (a.max_delay_mins || 0) > 0);
+  const dedupedCancelledAlerts = dedupedAlerts.filter((a) => a.is_cancellation);
+  const tripsCancelled = distinctCancelledTrips(dedupedCancelledAlerts);
+  const delayedAlerts = dedupedAlerts.filter((a) => !a.is_cancellation && (a.max_delay_mins || 0) > 0);
   const avgDelay =
     delayedAlerts.length > 0
       ? Math.round(delayedAlerts.reduce((acc, curr) => acc + (curr.max_delay_mins || 0), 0) / delayedAlerts.length)
       : 0;
-  const culprit = primaryCulprit(alerts);
-  const busiest = busiestStation(alerts);
-  const totalDelayMinutes = alerts.reduce((acc, a) => acc + impactMinutes(a), 0);
+  const culprit = primaryCulprit(dedupedAlerts);
+  const busiest = busiestStation(dedupedAlerts);
+  const totalDelayMinutes = dedupedAlerts.reduce((acc, a) => acc + impactMinutes(a), 0);
   const tripsAffected = new Set(alerts.filter((a) => a.trip_id).map((a) => a.trip_id)).size;
 
   return (
