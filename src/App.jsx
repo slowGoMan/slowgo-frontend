@@ -10,10 +10,36 @@ import IncidentFeed from './components/IncidentFeed';
 import Heatmap from './components/Heatmap';
 import TripTracker from './components/TripTracker';
 
+// Shared by both the feed's alerts and the heatmap's own independent
+// dataset - "what kind of incident" filters (rush hour, reason, direction)
+// are a legitimate slice for either view.
+function applyAlertFilters(list, { rushHourOnly, reasonFilter, directionFilter }) {
+  return list.filter((a) => {
+    if (rushHourOnly && !isRushHour(a.commute_period)) return false;
+    if (reasonFilter !== 'all' && a.incident_type !== reasonFilter) return false;
+    if (directionFilter !== 'all' && a.direction !== directionFilter) return false;
+    return true;
+  });
+}
+
+function applyStationFilter(list, selectedStation) {
+  if (!selectedStation) return list;
+  return list.filter((a) => a.affected_stations?.some((s) => s.toLowerCase().includes(selectedStation.name.toLowerCase())));
+}
+
+// The heatmap needs its own generous, fixed history window (see
+// buildCalendarWeeks) - a "typical week" pattern makes no sense scoped to
+// whatever the top time filter is set to (e.g. "Today" would leave it with
+// one day of data). 90 days comfortably covers the calendar's own ~12-week
+// display window with room to spare.
+const HEATMAP_WINDOW_DAYS = 90;
+
 export default function App() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const [heatmapAlerts, setHeatmapAlerts] = useState([]);
 
   const [timeFilter, setTimeFilter] = useState('today');
   const [rushHourOnly, setRushHourOnly] = useState(false);
@@ -21,9 +47,14 @@ export default function App() {
   const [directionFilter, setDirectionFilter] = useState('all');
   const [selectedStation, setSelectedStation] = useState(null);
 
-  useEffect(() => {
-    fetchAlerts();
-  }, [timeFilter]);
+  async function fetchHeatmapAlerts() {
+    const { data, error: fetchError } = await supabase
+      .from(TABLE)
+      .select('*')
+      .or('scope.is.null,scope.neq.not_relevant')
+      .gte('received_at', new Date(Date.now() - HEATMAP_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString());
+    if (!fetchError) setHeatmapAlerts(data || []);
+  }
 
   async function fetchAlerts() {
     setLoading(true);
@@ -65,26 +96,30 @@ export default function App() {
     setLoading(false);
   }
 
+  function refreshAll() {
+    fetchAlerts();
+    fetchHeatmapAlerts();
+  }
+
+  useEffect(() => {
+    fetchAlerts();
+  }, [timeFilter]);
+
+  useEffect(() => {
+    fetchHeatmapAlerts();
+  }, []);
+
   const directions = useMemo(() => {
     const set = new Set(alerts.map((a) => a.direction).filter(Boolean));
     return Array.from(set).sort();
   }, [alerts]);
 
-  const filteredAlerts = useMemo(() => {
-    return alerts.filter((a) => {
-      if (rushHourOnly && !isRushHour(a.commute_period)) return false;
-      if (reasonFilter !== 'all' && a.incident_type !== reasonFilter) return false;
-      if (directionFilter !== 'all' && a.direction !== directionFilter) return false;
-      return true;
-    });
-  }, [alerts, rushHourOnly, reasonFilter, directionFilter]);
+  const filteredAlerts = useMemo(
+    () => applyAlertFilters(alerts, { rushHourOnly, reasonFilter, directionFilter }),
+    [alerts, rushHourOnly, reasonFilter, directionFilter]
+  );
 
-  const feedAlerts = useMemo(() => {
-    if (!selectedStation) return filteredAlerts;
-    return filteredAlerts.filter((a) =>
-      a.affected_stations?.some((s) => s.toLowerCase().includes(selectedStation.name.toLowerCase()))
-    );
-  }, [filteredAlerts, selectedStation]);
+  const feedAlerts = useMemo(() => applyStationFilter(filteredAlerts, selectedStation), [filteredAlerts, selectedStation]);
 
   const activeToday = useMemo(() => {
     const today = torontoToday();
@@ -93,11 +128,20 @@ export default function App() {
   }, [alerts]);
 
   const dedupedFilteredAlerts = useMemo(() => dedupeToLatestObservations(filteredAlerts), [filteredAlerts]);
-  const dedupedFeedAlerts = useMemo(() => dedupeToLatestObservations(feedAlerts), [feedAlerts]);
+
+  const heatmapFilteredAlerts = useMemo(
+    () => applyAlertFilters(heatmapAlerts, { rushHourOnly, reasonFilter, directionFilter }),
+    [heatmapAlerts, rushHourOnly, reasonFilter, directionFilter]
+  );
+  const heatmapFeedAlerts = useMemo(
+    () => applyStationFilter(heatmapFilteredAlerts, selectedStation),
+    [heatmapFilteredAlerts, selectedStation]
+  );
+  const dedupedHeatmapAlerts = useMemo(() => dedupeToLatestObservations(heatmapFeedAlerts), [heatmapFeedAlerts]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
-      <Header activeCount={activeToday} loading={loading} onRefresh={fetchAlerts} />
+      <Header activeCount={activeToday} loading={loading} onRefresh={refreshAll} />
 
       <Filters
         timeFilter={timeFilter}
@@ -144,7 +188,7 @@ export default function App() {
       </section>
 
       <section className="max-w-7xl mx-auto mt-6">
-        <Heatmap alerts={dedupedFeedAlerts} timeFilter={timeFilter} />
+        <Heatmap alerts={dedupedHeatmapAlerts} />
       </section>
     </div>
   );

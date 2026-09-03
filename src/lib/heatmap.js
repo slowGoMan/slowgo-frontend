@@ -152,19 +152,15 @@ export function buildPeriodGrid(alerts) {
 
 // --- Recent-days calendar strip -----------------------------------------
 
-export function calendarWindowDays(timeFilter) {
-  switch (timeFilter) {
-    case '24h':
-    case '7d':
-      return 7;
-    case '30d':
-      return 30;
-    default:
-      return 84; // ~12 weeks for 'all'
-  }
-}
+// Always a fixed ~12-week window, independent of whatever time filter the
+// incident feed/stats are using - a "typical week" pattern needs its own
+// generous history to mean anything, and collapses to near-nothing if it's
+// tied to a feed filter like "Today" (confirmed real case: selecting Today
+// made both heatmaps render almost empty since there was only one day of
+// backing data to draw from).
+const CALENDAR_WINDOW_DAYS = 84;
 
-export function buildCalendarWeeks(alerts, timeFilter) {
+export function buildCalendarWeeks(alerts) {
   const dayStats = new Map();
   for (const a of alerts) {
     if (!a.service_date) continue;
@@ -175,7 +171,7 @@ export function buildCalendarWeeks(alerts, timeFilter) {
     if (a.is_cancellation) d.cancellations += 1;
   }
 
-  const days = calendarWindowDays(timeFilter);
+  const days = CALENDAR_WINDOW_DAYS;
   const end = new Date();
   end.setHours(0, 0, 0, 0);
   const start = new Date(end);
