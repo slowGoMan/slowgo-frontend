@@ -2,6 +2,8 @@
 // delay progression across stations - the payoff for the resolver: "6 min
 // at Aurora, 12 min by Bradford" instead of isolated per-station pings.
 
+import { dedupeToLatestObservations } from './heatmap';
+
 // Fixed magnitude thresholds, not quantile-based like the heatmap's
 // bucketing: a single observation's delay in minutes is a meaningful
 // absolute number on its own (0/15/30 min already carry real meaning here -
@@ -30,7 +32,13 @@ export function buildTripGroups(alerts) {
   }
 
   const groups = [];
-  for (const [tripId, obs] of byTrip) {
+  for (const [tripId, rawObs] of byTrip) {
+    // A station whose estimate got revised (e.g. "6 min" -> later "15 min")
+    // would otherwise appear twice in the same trip's timeline, looking like
+    // two different stations reported it (confirmed real case: a 7-station
+    // trip rendering as "15 stations reporting"). Collapse to GO's latest
+    // word per stop before counting or rendering.
+    const obs = dedupeToLatestObservations(rawObs);
     if (obs.length < 2) continue;
     const sorted = [...obs].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
     const isCancelled = sorted.some((o) => o.is_cancellation);
