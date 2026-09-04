@@ -34,6 +34,15 @@ function applyStationFilter(list, selectedStation) {
 // display window with room to spare.
 const HEATMAP_WINDOW_DAYS = 90;
 
+// Everything the frontend actually needs - deliberately excludes raw_body.
+// That column is the full, unfiltered source email (HTML, tracking links,
+// and whatever GO's own footer includes, e.g. the recipient address) kept
+// purely for debugging a misclassified row from the Supabase dashboard -
+// select('*') was sending it to every visitor on every page load, which a
+// public site should never do with raw inbound data.
+const ALERT_COLUMNS =
+  'id, received_at, subject, line, incident_type, status, min_delay_mins, max_delay_mins, is_cancellation, affected_stations, affected_segments, summary, created_at, scheduled_time, direction, trip_identifier, eligible_for_refund, advisory_type, service_date, commute_period, observation_key, trip_id, scope, parse_source, update_stage';
+
 export default function App() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +59,7 @@ export default function App() {
   async function fetchHeatmapAlerts() {
     const { data, error: fetchError } = await supabase
       .from(TABLE)
-      .select('*')
+      .select(ALERT_COLUMNS)
       .or('scope.is.null,scope.neq.not_relevant')
       .gte('received_at', new Date(Date.now() - HEATMAP_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString());
     if (!fetchError) setHeatmapAlerts(data || []);
@@ -62,7 +71,7 @@ export default function App() {
 
     let query = supabase
       .from(TABLE)
-      .select('*')
+      .select(ALERT_COLUMNS)
       // Pure marketing/weather broadcasts the worker can now also ingest -
       // never real signal, so excluded before they even reach the client.
       // scope.is.null keeps pre-rewrite rows (written before this column
