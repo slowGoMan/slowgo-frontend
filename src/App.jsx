@@ -78,8 +78,11 @@ export default function App() {
       // existed) rather than silently dropping them: neq alone would, since
       // SQL's `column != 'x'` is neither true nor false for a null column.
       .or('scope.is.null,scope.neq.not_relevant')
-      .order('service_date', { ascending: false })
-      .order('scheduled_time', { ascending: false, nullsFirst: false })
+      // Most-recently-reported first - a genuine timeline of when alerts
+      // actually came in. Sorting by scheduled_time first (the old
+      // behavior) meant segment-wide issues (no scheduled_time, e.g. "Barrie
+      // - Track conditions") always sorted to the bottom of their day
+      // regardless of when they were actually received.
       .order('received_at', { ascending: false });
 
     const now = new Date();
