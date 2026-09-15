@@ -32,3 +32,11 @@ Sign-offs auto-accepted during autonomous runs. Nothing here blocked the run —
 - QA concern: Console-error and visual-regression checks for the API mode are inherently runtime/visual and cannot be settled from this source diff alone.
 - QA concern: README.md documents VITE_DELAY_DATA_SOURCE and METROLINX_API_KEY, but documentation alone does not demonstrate the dashboard display path works against go_api_service_alerts.
 - Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789487622048.png
+
+## 2026-09-15T18:13:41.964Z — 1/1 Fix Metrolinx base URL path in ingest script
+
+### Visual advisories (auto-accepted)
+- QA concern: The base URL is resolved via os.environ.get("METROLINX_BASE_URL", ...) with an environment-variable override. The corrected literal only takes effect when METROLINX_BASE_URL is unset; whether the environment used at runtime supplies an override is not determinable from the diff.
+- QA concern: No HTTP response evidence (status code, response body, or logs) is present in the change set to substantiate the 200 OK outcome.
+- web browser visual QA: The screenshot shows the SlowGo.ca dashboard UI rendering correctly with data, but the requirement under test concerns the Metrolinx API base URL string in scripts/ingest_go_api.py and the HTTP 200/404 response from api.openmetrolinx.com. Neither the script code nor the HTTP request status is observable in this browser view, so the specific fix cannot be visually verified here.
+- Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789496018326.png
