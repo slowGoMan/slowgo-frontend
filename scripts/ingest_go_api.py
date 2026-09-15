@@ -35,7 +35,7 @@ import requests
 METROLINX_API_KEY = os.environ.get("METROLINX_API_KEY") or "30029868"
 # Metrolinx Open Data API base. Overridable for staging/alternate endpoints.
 METROLINX_BASE_URL = os.environ.get(
-    "METROLINX_BASE_URL", "https://api.openmetrolinx.com/OpenDataAPI/api/V1"
+    "METROLINX_BASE_URL", "https://api.openmetrolinx.com/OpenDataAPI/pi/V1"
 )
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
