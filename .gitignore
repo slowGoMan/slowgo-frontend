@@ -29,3 +29,6 @@ sample-emails/
 *.njsproj
 *.sln
 *.sw?
+
+# Gage internal state — never meant to be committed
+.agent/
