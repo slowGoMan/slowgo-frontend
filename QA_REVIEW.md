@@ -49,3 +49,14 @@ Sign-offs auto-accepted during autonomous runs. Nothing here blocked the run —
 - QA concern: The try/except added around the call in main() is effectively redundant because fetch_feed(..., required=False) already swallows RequestException and returns []; this is harmless but the outer handler appears unreachable for this error class.
 - web browser visual QA: The screenshot shows the SlowGo.ca transit dashboard (corridor map, incident timeline, tracked trips, weekly pattern), not the execution of scripts/ingest_go_api.py. The requirement under test concerns CLI log output (a logged 404 warning), absence of an uncaught HTTPError, exit status 0, and Supabase upserts into 'go_api_service_alerts' — none of which are observable in this web UI view. The dashboard renders normally, but the phase's behavior cannot be confirmed from this image.
 - Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789496394685.png
+
+## 2026-09-15T18:36:13.409Z — 1/1 Update Metrolinx API Endpoints and Response Parsers
+
+### Visual advisories (auto-accepted)
+- QA concern: No execution evidence is available for either stated confirmation (pytest run or script run); both are runtime gates that this static review cannot settle.
+- QA concern: The added test file's diff is truncated inside MainFlowTests.test_main_upserts_barrie_alerts_and_exceptions, so the main end-to-end mocked-flow assertions are not fully inspectable here.
+- QA concern: Whether `ServiceUpdate/Exceptions/Train` is actually a valid, 200-returning Metrolinx endpoint, and whether the live Exceptions/Train payload uses the exact field names assumed (TripNumber, IsCancelled, Trip, Stop, StopName, PostedDateTime, Code, SubjectEnglish/BodyEnglish, Lines[].Code), cannot be validated from source alone.
+- QA concern: `map_alert` now derives alert_id from the `Code` field; idempotency across runs depends on that field being present and stable in the live payload, which is not evidenced here.
+- QA concern: No dry-run flag or code path is visible in the provided diff, so the 'dry-run mode' half of the second requirement is unverifiable from these changes.
+- web browser visual QA: The screenshot shows the slowgo.ca Barrie Line dashboard UI (heatmap, incident timeline, tracked trips), not the output of `pytest tests/test_ingest_go_api.py` or a dry-run/live execution of `scripts/ingest_go_api.py`. The specific verification steps—all unit tests passing with mocked Metrolinx envelopes and absence of 404 errors from the ServiceUpdate/Exceptions/Train endpoint—cannot be observed in this static frontend view. While the page renders Barrie-line alert/exception data (consistent with ingestion working), the requirement under test is a backend/test concern that is not directly verifiable here.
+- Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789497364235.png

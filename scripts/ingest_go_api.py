@@ -2,11 +2,11 @@
 
 Phase 2/3 of the GO Transit Open API pipeline. Polls the two real-time feeds
 - ServiceUpdate/ServiceAlert/All (advisories + delays)
-- ServiceUpdate/TripUpdates (live trip snapshots)
+- ServiceUpdate/Exceptions/Train (trip cancellations + schedule exceptions)
 and upserts them into the phase-1 tables go_api_service_alerts /
 go_api_trip_updates (see supabase/migrations/20250501_go_api_tables.sql).
-Idempotent: re-fetching the same alert/day or trip replaces the previous row
-instead of duplicating it.
+Idempotent: re-fetching the same alert/day or trip exception replaces the
+previous row instead of duplicating it.
 
 Runs from .github/workflows/ingest_go_api.yml (5-10 min cron + manual
 dispatch). Writes go through SUPABASE_SERVICE_KEY only - the frontend anon
@@ -23,10 +23,12 @@ Pitfalls handled (see PROGRESS.md and the migration header):
   * Toronto-local dates come from zoneinfo America/Toronto, never the
     runner's UTC clock.
   * ServiceUpdate/TripUpdates is not a real Metrolinx JSON endpoint (HTTP
-    404); TripUpdates is treated as an optional feed so a failure there only
-    logs a warning and lets the ServiceAlert upsert finish. GTFS-RT Trip
-    Updates live under Gtfs/Feed/TripUpdates as protocol buffers, which this
-    JSON pipeline intentionally does not consume.
+    404); real-time trip exceptions live under ServiceUpdate/Exceptions/
+    Train instead, and GTFS-RT Trip Updates under Gtfs/Feed/TripUpdates as
+    protocol buffers (which this JSON pipeline intentionally does not
+    consume). Trip exceptions are still treated as an optional feed: a
+    transient failure there only logs a warning and lets the ServiceAlert
+    upsert finish.
 """
 
 import json
@@ -47,11 +49,12 @@ SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
 REST_URL = f"{SUPABASE_URL}/rest/v1"
 
 ALERTS_ENDPOINT = "ServiceUpdate/ServiceAlert/All"
-TRIP_UPDATES_ENDPOINT = "ServiceUpdate/TripUpdates"
+TRIP_UPDATES_ENDPOINT = "ServiceUpdate/Exceptions/Train"
 
-# Barrie line identifies itself as 'BR' (GTFS route_short_name) or 'Barrie'
-# (route_long_name / corridor) across both feeds.
-BARRIE_CODES = {"BR", "BARRIE"}
+# Barrie line identifies itself as 'BR' (GTFS route_short_name), 'Barrie'
+# (route_long_name / corridor), or GTFS route_id '68' (used by the
+# Exceptions/Train feed's Lines / Stop ids) across both feeds.
+BARRIE_CODES = {"BR", "BARRIE", "68"}
 
 TORONTO = ZoneInfo("America/Toronto")
 
@@ -129,17 +132,129 @@ def _get(obj, *keys, default=None):
     return default
 
 
+def as_list(value):
+    """Always return a list: None -> [], a list -> itself, else [value].
+
+    Metrolinx JSON responses switch between a single object and a one-element
+    array for the same field (e.g. {'Messages': {'Message': {...}}} when only
+    one alert is active), so every collection reader normalizes through this.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def extract_collection(payload, *paths, fallback=()):
+    """Pull the entity list out of a Metrolinx envelope, always as a list.
+
+    Alerts arrive wrapped as {'Messages': {'Message': [...]}} (a single dict
+    when only one alert is active) and trip exceptions as {'Trip': [...]}.
+    Walks a dotted path (e.g. extract_collection(p, 'Messages.Message')) and
+    falls back to flat candidate keys / one level of nesting for envelope
+    changes.
+    """
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+    for path in paths:
+        value = payload
+        for key in path.split(".") if isinstance(path, str) else path:
+            if not isinstance(value, dict) or key not in value:
+                value = None
+                break
+            value = value[key]
+        if value is not None:
+            return as_list(value)
+    for key in fallback:
+        value = payload.get(key)
+        if value is not None:
+            return as_list(value)
+    for value in payload.values():
+        if isinstance(value, dict):
+            for key in fallback:
+                inner = value.get(key)
+                if inner is not None:
+                    return as_list(inner)
+    return []
+
+
+def is_truthy(v):
+    """Interpret a Metrolinx boolean-ish value ('true'/'1'/1/True/...)."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "y")
+    try:
+        return int(v) == 1
+    except (TypeError, ValueError):
+        return False
+
+
+def posted_at_iso(value):
+    """Normalize PostedDateTime (Toronto-local) to a UTC ISO-8601 string."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(value[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=TORONTO)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+# Exceptions/Train 'Trip' records carry route context in TripName / Stop
+# names rather than a Line code; these are the Barrie-line station names
+# (Metrolinx GTFS stops.txt) used to classify a trip when its name doesn't
+# say 'Barrie'. Union Station is deliberately excluded: it is shared with
+# every other GO line and would misclassify their trips.
+BARRIE_STATION_NAMES = {
+    "allandale waterfront", "barrie south", "innisfil", "bradford",
+    "east gwillimbury", "newmarket", "aurora", "king city", "maple",
+    "rutherford", "downsview park", "york university", "sheppard west",
+}
+
+
+def _stop_name_key(name):
+    """Normalize a stop name for Barrie-station matching (drop GO/Station)."""
+    key = str(name).strip().lower()
+    for suffix in (" go", " station"):
+        if key.endswith(suffix):
+            key = key[: -len(suffix)]
+    return key.strip()
+
+
+def _mentions_barrie(text):
+    """True if a TripName/TripNumber-style value references the Barrie line."""
+    if not text:
+        return False
+    upper = str(text).strip().upper()
+    return upper in BARRIE_CODES or "BARRIE" in upper or upper.startswith("BR-")
+
+
 def is_barrie_line(entity):
-    """True if any line/corridor/route field marks an entity as Barrie."""
+    """True if any line/corridor/route/stop field marks an entity as Barrie."""
     if not isinstance(entity, dict):
         return False
-    for key in (
-        "lineCode", "line_code", "LineCode",
-        "routeCode", "route_code", "RouteCode",
-        "corridor", "Corridor", "line", "Line",
-    ):
+    # Direct line/corridor/route fields (camel/snake/Pascal).
+    for key in ("lineCode", "line_code", "LineCode", "routeCode", "route_code"):
         value = entity.get(key)
         if value is not None and str(value).strip().upper() in BARRIE_CODES:
+            return True
+    # ServiceAlert entities list affected routes under 'Lines' as
+    # [{'Code': 'BR'}, ...]; the Barrie route is also GTFS route_id '68'.
+    for item in as_list(entity.get("Lines") or entity.get("lines") or entity.get("Line")):
+        if isinstance(item, dict):
+            code = _get(item, "Code", "code", "lineCode", "line_code", "routeCode", "route_code")
+            if code is not None and str(code).strip().upper() in BARRIE_CODES:
+                return True
+        elif str(item).strip().upper() in BARRIE_CODES:
             return True
     # TripUpdate entities sometimes nest the route under a 'trip' object.
     trip = entity.get("trip")
@@ -147,6 +262,19 @@ def is_barrie_line(entity):
         for key in ("routeId", "route_id", "lineCode", "line_code"):
             value = trip.get(key)
             if value is not None and str(value).strip().upper() in BARRIE_CODES:
+                return True
+    # Exceptions/Train 'Trip' records: the line usually shows up in TripName
+    # (e.g. 'Barrie 968' / 'BR-968') or in the stop list's station names.
+    if _mentions_barrie(entity.get("TripName") or entity.get("trip_name")) or _mentions_barrie(
+        entity.get("TripNumber") or entity.get("trip_number")
+    ):
+        return True
+    for stop in as_list(entity.get("Stop") or entity.get("Stops") or entity.get("stopTimeUpdates")):
+        if isinstance(stop, dict):
+            if _stop_name_key(_get(stop, "StopName", "stop_name", "Name", "name") or "") in BARRIE_STATION_NAMES:
+                return True
+            stop_id = _get(stop, "StopId", "StopID", "stop_id", "Id", "id")
+            if stop_id is not None and str(stop_id).strip().upper() in BARRIE_CODES:
                 return True
     # Alerts list affected services as a nested array (e.g. [{code: 'BR'}]).
     for key in ("routes", "Routes", "affectedServices", "AffectedServices"):
@@ -200,64 +328,98 @@ def apply_gtfs_day_shift(service_day, time_str):
 
 
 def map_alert(alert):
-    """Map one ServiceUpdates entity into (alert_id, service_date) rows."""
+    """Map one ServiceUpdates Message into (alert_id, service_date) rows.
+
+    Metrolinx alerts identify themselves via 'Code', post a timestamp in
+    'PostedDateTime', carry English text in 'SubjectEnglish'/'BodyEnglish'
+    and a bucket in 'Category', and mark affected routes under 'Lines'
+    (checked for Barrie by is_barrie_line).
+    """
     if not is_barrie_line(alert):
         return []
-    alert_id = str(_get(alert, "alertId", "alert_id", "serviceAlertId", "id") or "").strip()
+    alert_id = str(_get(alert, "Code", "code", "alertId", "alert_id", "serviceAlertId", "id") or "").strip()
     if not alert_id:
         return []
     delay = to_int(_get(alert, "delayMinutes", "delay_minutes", "DelayMinutes", "delay"))
-    status = _get(alert, "status", "alertStatus", "AlertStatus")
+    category = _get(alert, "Category", "category", "AlertType", "alert_type")
+    status = _get(alert, "status", "alertStatus", "AlertStatus") or category
     if status is not None:
         status = str(status)[:100]
-    message = _get(alert, "message", "headline", "Headline", "description", "text")
-    if message is not None:
-        message = str(message)
+    subject = _get(alert, "SubjectEnglish", "subjectEnglish", "subject", "headline", "Headline")
+    body = _get(alert, "BodyEnglish", "bodyEnglish", "body", "description", "text", "message")
+    if subject and body:
+        message = str(subject) if str(subject) == str(body) else f"{subject}\n\n{body}"
+    else:
+        message = str(subject or body or "")
+    posted = posted_at_iso(_get(alert, "PostedDateTime", "postedDateTime", "posted_date_time"))
     start_time = _get(alert, "startTime", "start_time", "StartTime")
 
     rows = []
     for service_day in alert_service_dates(alert):
         service_day = apply_gtfs_day_shift(service_day, start_time)
-        rows.append(
-            {
-                "alert_id": alert_id,
-                "service_date": service_day.isoformat(),
-                "line_code": "BR",
-                "delay_minutes": delay,
-                "status": status,
-                "message": message,
-                "raw_json": json.dumps(alert),
-            }
-        )
+        row = {
+            "alert_id": alert_id,
+            "service_date": service_day.isoformat(),
+            "line_code": "BR",
+            "delay_minutes": delay,
+            "status": status,
+            "message": message,
+            "raw_json": json.dumps(alert),
+        }
+        if posted:
+            row["received_at"] = posted
+        rows.append(row)
     return rows
 
 
+def normalize_stop(stop):
+    """Normalize one Exceptions/Train 'Stop' entry for the jsonb snapshot."""
+    if not isinstance(stop, dict):
+        return stop
+    return {
+        "stop_id": _get(stop, "StopId", "StopID", "stop_id", "Id", "id", "Code", "code"),
+        "stop_name": _get(stop, "StopName", "stop_name", "Name", "name"),
+        "stop_sequence": to_int(_get(stop, "StopSequence", "stop_sequence", "Sequence", "sequence")),
+        "is_cancelled": _get(stop, "IsCancelled", "is_cancelled", "Cancelled", "Canceled"),
+        "scheduled_time": _get(stop, "ScheduledTime", "scheduled_time", "ScheduledDepartureTime", "DepartureTime", "departure_time"),
+        "actual_time": _get(stop, "ActualTime", "actual_time", "ActualDepartureTime", "ActualArrivalTime", "arrival_time"),
+    }
+
+
 def map_trip_update(entity):
-    """Map one TripUpdates entity into a trip_id-keyed snapshot row."""
+    """Map one Exceptions/Train 'Trip' record into a trip_id-keyed row.
+
+    Exceptions/Train reports cancellations and schedule exceptions rather
+    than live per-stop delays: IsCancelled drives schedule_relationship and
+    the Stop list is stored as stop_time_updates jsonb for phase 3.
+    """
     if not is_barrie_line(entity):
         return None
-    trip_id = str(_get(entity, "tripId", "trip_id", "tripIdentifier", "TripId") or "").strip()
+    trip_id = str(_get(entity, "TripNumber", "tripNumber", "trip_number", "TripId", "trip_id") or "").strip()
     if not trip_id:
         return None
-    trip = entity.get("trip") if isinstance(entity.get("trip"), dict) else {}
-    delay = to_int(
-        _get(entity, "delaySeconds", "delay_seconds", "DelaySeconds", "delay")
-        or _get(trip, "delaySeconds", "delay_seconds", "DelaySeconds", "delay")
+    relationship = _get(
+        entity, "ScheduleRelationship", "schedule_relationship", "scheduleRelationship"
     )
+    if not relationship:
+        cancelled = _get(entity, "IsCancelled", "is_cancelled", "Cancelled", "Canceled")
+        relationship = "CANCELED" if is_truthy(cancelled) else "SCHEDULED"
     direction = str(
-        _get(entity, "directionCode", "direction_code", "directionId", "direction_id")
-        or _get(trip, "directionCode", "direction_code", "directionId", "direction_id")
-        or ""
+        _get(entity, "directionCode", "direction_code", "directionId", "direction_id") or ""
     )
-    relationship = _get(entity, "scheduleRelationship", "schedule_relationship", "ScheduleRelationship")
-    stop_updates = _get(entity, "stopTimeUpdates", "stop_time_updates", "StopTimeUpdates") or []
+    delay = to_int(_get(entity, "delaySeconds", "delay_seconds", "DelaySeconds", "delay"))
+    stops = []
+    for stop in as_list(
+        entity.get("Stop") or entity.get("Stops") or entity.get("stopTimeUpdates")
+    ):
+        stops.append(normalize_stop(stop))
     return {
         "trip_id": trip_id,
         "line_code": "BR",
         "direction_code": direction,
         "delay_seconds": delay,
         "schedule_relationship": str(relationship) if relationship is not None else None,
-        "stop_time_updates": json.dumps(stop_updates),
+        "stop_time_updates": json.dumps(stops),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -281,59 +443,37 @@ def fetch_feed(endpoint, required=True):
         if not required:
             print(
                 f"WARNING: {endpoint} unavailable ({exc}); skipping trip "
-                f"updates for this run and continuing with service alerts.",
+                f"exceptions for this run and continuing with service alerts.",
                 file=sys.stderr,
             )
             return []
         raise
 
 
-def extract_entities(payload, *candidates):
-    """Pull the entity list out of a feed payload.
-
-    The Metrolinx envelope isn't documented in-repo, so accept a bare list,
-    a {'ServiceAlerts': [...]}-style wrapper, or one level of nesting
-    ({'ServiceUpdate': {'ServiceAlert': [...]}}).
-    """
-    if isinstance(payload, list):
-        return payload
-    if not isinstance(payload, dict):
-        return []
-    for key in candidates:
-        value = payload.get(key)
-        if isinstance(value, list):
-            return value
-    for value in payload.values():
-        if isinstance(value, dict):
-            for key in candidates:
-                inner = value.get(key)
-                if isinstance(inner, list):
-                    return inner
-    return []
-
-
 def main():
     alerts_payload = fetch_feed(ALERTS_ENDPOINT)
-    alerts = extract_entities(
-        alerts_payload, "ServiceAlerts", "Alerts", "serviceAlerts", "ServiceAlert", "alerts"
+    alerts = extract_collection(
+        alerts_payload, "Messages.Message", "ServiceAlert",
+        fallback=("ServiceAlerts", "Alerts", "serviceAlerts", "alerts"),
     )
     alert_rows = []
     for alert in alerts:
         alert_rows.extend(map_alert(alert))
 
-    # TripUpdates is optional: Metrolinx may 404 on it (or serve GTFS-RT
-    # protobuf elsewhere), so a failure must never block the alert ingest.
+    # Trip exceptions are fetched as an optional feed: a transient failure
+    # must never block the ServiceAlert upsert from completing.
     try:
         trips_payload = fetch_feed(TRIP_UPDATES_ENDPOINT, required=False)
     except requests.exceptions.RequestException as exc:
         print(
             f"WARNING: {TRIP_UPDATES_ENDPOINT} unavailable ({exc}); skipping "
-            f"trip updates for this run and continuing with service alerts.",
+            f"trip exceptions for this run and continuing with service alerts.",
             file=sys.stderr,
         )
         trips_payload = []
-    trips = extract_entities(
-        trips_payload, "TripUpdates", "TripUpdate", "tripUpdates", "trip_updates"
+    trips = extract_collection(
+        trips_payload, "Trip", "Trips",
+        fallback=("TripUpdates", "TripUpdate", "tripUpdates", "trip_updates"),
     )
     trip_rows = [row for row in (map_trip_update(t) for t in trips) if row]
 
