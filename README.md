@@ -30,6 +30,8 @@ npm run dev
 | :--- | :--- |
 | `VITE_SUPABASE_URL` | Your Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anon/public API key |
+| `VITE_DELAY_DATA_SOURCE` | Optional data-source switch: `'api'` queries the Metrolinx Open Data pipeline's `go_api_service_alerts` table; unset (or any other value) keeps the email-driven `go_train_delays` table |
+| `METROLINX_API_KEY` | Metrolinx Open Data API key, used by `scripts/ingest_go_api.py` (optional - falls back to a default demo key when unset) |
 
 ## Data source: `public.go_train_delays`
 
