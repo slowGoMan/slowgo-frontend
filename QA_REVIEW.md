@@ -40,3 +40,12 @@ Sign-offs auto-accepted during autonomous runs. Nothing here blocked the run —
 - QA concern: No HTTP response evidence (status code, response body, or logs) is present in the change set to substantiate the 200 OK outcome.
 - web browser visual QA: The screenshot shows the SlowGo.ca dashboard UI rendering correctly with data, but the requirement under test concerns the Metrolinx API base URL string in scripts/ingest_go_api.py and the HTTP 200/404 response from api.openmetrolinx.com. Neither the script code nor the HTTP request status is observable in this browser view, so the specific fix cannot be visually verified here.
 - Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789496018326.png
+
+## 2026-09-15T18:19:58.529Z — 1/1 Graceful error handling for trip updates endpoint
+
+### Visual advisories (auto-accepted)
+- QA concern: extract_entities() body is not visible in the diff; the optional-feed fallback now returns [] (a list), and the prior call sites appear to pass dict-shaped JSON payloads. If extract_entities assumes a dict (e.g. .get()), the empty-list fallback could raise a different exception and still abort the run, undermining the exit-0 goal. Not verifiable from the provided diff.
+- QA concern: The Supabase upsert and the table name 'go_api_service_alerts' are not shown in CHANGE SET, so the 'successfully upserts service alerts' half of the objective cannot be confirmed from this evidence.
+- QA concern: The try/except added around the call in main() is effectively redundant because fetch_feed(..., required=False) already swallows RequestException and returns []; this is harmless but the outer handler appears unreachable for this error class.
+- web browser visual QA: The screenshot shows the SlowGo.ca transit dashboard (corridor map, incident timeline, tracked trips, weekly pattern), not the execution of scripts/ingest_go_api.py. The requirement under test concerns CLI log output (a logged 404 warning), absence of an uncaught HTTPError, exit status 0, and Supabase upserts into 'go_api_service_alerts' — none of which are observable in this web UI view. The dashboard renders normally, but the phase's behavior cannot be confirmed from this image.
+- Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789496394685.png
