@@ -22,11 +22,6 @@ Pitfalls handled (see PROGRESS.md and the migration header):
     as 24:40:00 on D.
   * Toronto-local dates come from zoneinfo America/Toronto, never the
     runner's UTC clock.
-  * ServiceUpdate/TripUpdates is not a real Metrolinx JSON endpoint (HTTP
-    404); TripUpdates is treated as an optional feed so a failure there only
-    logs a warning and lets the ServiceAlert upsert finish. GTFS-RT Trip
-    Updates live under Gtfs/Feed/TripUpdates as protocol buffers, which this
-    JSON pipeline intentionally does not consume.
 """
 
 import json
@@ -262,30 +257,13 @@ def map_trip_update(entity):
     }
 
 
-def fetch_feed(endpoint, required=True):
-    """Fetch a Metrolinx feed and decode it as JSON.
-
-    required=False marks an optional feed (e.g. TRIP_UPDATES_ENDPOINT): a
-    404 'Not Found' or any other HTTP/network error logs an informative
-    warning and yields an empty payload instead of aborting the run, so the
-    already-fetched ServiceAlert records still get upserted.
-    """
+def fetch_feed(endpoint):
     url = f"{METROLINX_BASE_URL}/{endpoint}"
-    try:
-        resp = requests.get(url, params={"key": METROLINX_API_KEY}, timeout=(10, 60))
-        if resp.status_code != 200:
-            print(f"Metrolinx error {resp.status_code} for {url}: {resp.text}", file=sys.stderr)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.exceptions.RequestException as exc:
-        if not required:
-            print(
-                f"WARNING: {endpoint} unavailable ({exc}); skipping trip "
-                f"updates for this run and continuing with service alerts.",
-                file=sys.stderr,
-            )
-            return []
-        raise
+    resp = requests.get(url, params={"key": METROLINX_API_KEY}, timeout=(10, 60))
+    if resp.status_code != 200:
+        print(f"Metrolinx error {resp.status_code} for {url}: {resp.text}", file=sys.stderr)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def extract_entities(payload, *candidates):
@@ -321,17 +299,7 @@ def main():
     for alert in alerts:
         alert_rows.extend(map_alert(alert))
 
-    # TripUpdates is optional: Metrolinx may 404 on it (or serve GTFS-RT
-    # protobuf elsewhere), so a failure must never block the alert ingest.
-    try:
-        trips_payload = fetch_feed(TRIP_UPDATES_ENDPOINT, required=False)
-    except requests.exceptions.RequestException as exc:
-        print(
-            f"WARNING: {TRIP_UPDATES_ENDPOINT} unavailable ({exc}); skipping "
-            f"trip updates for this run and continuing with service alerts.",
-            file=sys.stderr,
-        )
-        trips_payload = []
+    trips_payload = fetch_feed(TRIP_UPDATES_ENDPOINT)
     trips = extract_entities(
         trips_payload, "TripUpdates", "TripUpdate", "tripUpdates", "trip_updates"
     )
