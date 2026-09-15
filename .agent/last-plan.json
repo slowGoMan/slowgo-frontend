@@ -1,0 +1,85 @@
+{
+  "instructions": "Right now our application is relying on email notifications (cloudflare worker) and supabase is logging these emails and parsing out info along with using a guthub function to pull data from GO to get trips ids. This is all working properly now. The good news is GO Transit gave me an API key: 30029868 and attached documentation on how to use it and what is available to colect. This is a big change so I would like open a new branch to not affect my current working version using emails. I should also create new tables in supabase to collect the data from API calls and not emails if this makes sense .",
+  "planOutput": "{\n  \"goal\": \"Introduce a dedicated GO Transit Open API ingestion pipeline and new Supabase tables on an isolated branch while keeping the existing email-driven pipeline operational.\",\n  \"assumptions\": [\n    \"The Metrolinx Open API base URL is 'https://api.openmetrolinx.com/OpenDataAPI/api/V1' accepting the API key via query parameter 'key=30029868'.\",\n    \"Ingestion will focus on ServiceUpdates (delays and alerts) and TripUpdates (real-time train delay status and trip identifiers) for the Barrie line.\",\n    \"New Supabase tables ('go_api_service_alerts', 'go_api_trip_updates') will be created with anon read RLS policies and service-role write access, leaving 'go_train_delays' intact.\",\n    \"A Python-based scheduled GitHub Action runner will ingest the API payloads into Supabase on a regular schedule, mirroring the project's existing GTFS refresh patterns.\"\n  ],\n  \"clarifyingQuestions\": [],\n  \"suggestedBranch\": \"feat/go-transit-api-integration\",\n  \"phases\": [\n    {\n      \"id\": \"phase-1\",\n      \"name\": \"Database Schema for API Ingestion\",\n      \"goal\": \"Create SQL migration defining dedicated Supabase tables, indexes, and RLS policies for Metrolinx API alerts and trip updates.\",\n      \"files\": [\n        \"supabase/migrations/20250501_go_api_tables.sql\"\n      ],\n      \"newFiles\": [\n        \"supabase/migrations/20250501_go_api_tables.sql\"\n      ],\n      \"changes\": [\n        \"Define 'go_api_service_alerts' table storing alert metadata (alert_id, service_date, line_code, delay_minutes, status, message, raw_json, received_at).\",\n        \"Define 'go_api_trip_updates' table storing trip real-time updates (trip_id, line_code, direction_code, delay_seconds, schedule_relationship, stop_time_updates, updated_at).\",\n        \"Add indexes on service_date, line_code, received_at, and trip_id.\",\n        \"Add Row Level Security (RLS) policies allowing public read (anon key) and full write/update access to service_role.\"\n      ],\n      \"verification\": [\n        \"SQL migration executes without syntax errors in Supabase SQL editor.\",\n        \"Tables are visible in Supabase with RLS enabled allowing SELECT for public/anon and blocking unauthenticated INSERT/UPDATE.\"\n      ]\n    },\n    {\n      \"id\": \"phase-2\",\n      \"name\": \"GO Transit API Ingestion Script and Workflow\",\n      \"goal\": \"Build an ingestion script and scheduled GitHub Action to poll Metrolinx Open API endpoints and persist delay updates into Supabase.\",\n      \"files\": [\n        \"scripts/ingest_go_api.py\",\n        \".github/workflows/ingest_go_api.yml\"\n      ],\n      \"newFiles\": [\n        \"scripts/ingest_go_api.py\",\n        \".github/workflows/ingest_go_api.yml\"\n      ],\n      \"changes\": [\n        \"Create 'scripts/ingest_go_api.py' using requests and Supabase client to query Metrolinx API endpoints ('ServiceUpdate/ServiceAlert/All' and 'ServiceUpdate/TripUpdates') with API key '30029868' (configurable via METROLINX_API_KEY).\",\n        \"Implement Barrie Line filtering ('BR' line / corridor), Toronto timezone normalization for service dates, and idempotent upserts into 'go_api_service_alerts' and 'go_api_trip_updates'.\",\n        \"Create '.github/workflows/ingest_go_api.yml' scheduled to run every 5-10 minutes with manual workflow_dispatch support using repository secrets SUPABASE_URL and SUPABASE_SERVICE_KEY.\"\n      ],\n      \"verification\": [\n        \"Running 'python scripts/ingest_go_api.py' locally or via workflow_dispatch fetches data from Metrolinx and successfully populates rows in 'go_api_service_alerts' and 'go_api_trip_updates'.\",\n        \"Re-running the script does not create duplicate entries for the same alert or trip update timestamp.\"\n      ]\n    },\n    {\n      \"id\": \"phase-3\",\n      \"name\": \"Frontend Data Source Compatibility Layer\",\n      \"goal\": \"Expose an optional environment-driven switch in Supabase data client to allow querying the new API data source while preserving fallback to email delay tables.\",\n      \"files\": [\n        \"src/lib/supabase.js\",\n        \".env.example\"\n      ],\n      \"changes\": [\n        \"Update 'src/lib/supabase.js' to export TABLE configurable via 'VITE_DELAY_DATA_SOURCE' ('api' -> 'go_api_service_alerts', default -> 'go_train_delays').\",\n        \"Add adapter mapper in 'src/lib/supabase.js' to map API table fields to the dashboard's expected alert schema (line, direction, delay_minutes, status, message, service_date).\",\n        \"Document 'VITE_DELAY_DATA_SOURCE' and 'METROLINX_API_KEY' in '.env.example'.\"\n      ],\n      \"verification\": [\n        \"Dashboard runs and loads existing data from 'go_train_delays' by default.\",\n        \"When 'VITE_DELAY_DATA_SOURCE=api' is configured, dashboard fetches and displays delay entries from 'go_api_service_alerts' without console errors or visual regressions.\"\n      ]\n    }\n  ]\n}",
+  "plan": {
+    "goal": "Introduce a dedicated GO Transit Open API ingestion pipeline and new Supabase tables on an isolated branch while keeping the existing email-driven pipeline operational.",
+    "assumptions": [
+      "The Metrolinx Open API base URL is 'https://api.openmetrolinx.com/OpenDataAPI/api/V1' accepting the API key via query parameter 'key=30029868'.",
+      "Ingestion will focus on ServiceUpdates (delays and alerts) and TripUpdates (real-time train delay status and trip identifiers) for the Barrie line.",
+      "New Supabase tables ('go_api_service_alerts', 'go_api_trip_updates') will be created with anon read RLS policies and service-role write access, leaving 'go_train_delays' intact.",
+      "A Python-based scheduled GitHub Action runner will ingest the API payloads into Supabase on a regular schedule, mirroring the project's existing GTFS refresh patterns."
+    ],
+    "clarifyingQuestions": [],
+    "suggestedBranch": "feat/go-transit-api-integration",
+    "phases": [
+      {
+        "id": "phase-1",
+        "name": "Database Schema for API Ingestion",
+        "goal": "Create SQL migration defining dedicated Supabase tables, indexes, and RLS policies for Metrolinx API alerts and trip updates.",
+        "files": [
+          "supabase/migrations/20250501_go_api_tables.sql"
+        ],
+        "newFiles": [
+          "supabase/migrations/20250501_go_api_tables.sql"
+        ],
+        "changes": [
+          "Define 'go_api_service_alerts' table storing alert metadata (alert_id, service_date, line_code, delay_minutes, status, message, raw_json, received_at).",
+          "Define 'go_api_trip_updates' table storing trip real-time updates (trip_id, line_code, direction_code, delay_seconds, schedule_relationship, stop_time_updates, updated_at).",
+          "Add indexes on service_date, line_code, received_at, and trip_id.",
+          "Add Row Level Security (RLS) policies allowing public read (anon key) and full write/update access to service_role."
+        ],
+        "verification": [
+          "SQL migration executes without syntax errors in Supabase SQL editor.",
+          "Tables are visible in Supabase with RLS enabled allowing SELECT for public/anon and blocking unauthenticated INSERT/UPDATE."
+        ]
+      },
+      {
+        "id": "phase-2",
+        "name": "GO Transit API Ingestion Script and Workflow",
+        "goal": "Build an ingestion script and scheduled GitHub Action to poll Metrolinx Open API endpoints and persist delay updates into Supabase.",
+        "files": [
+          "scripts/ingest_go_api.py",
+          ".github/workflows/ingest_go_api.yml"
+        ],
+        "newFiles": [
+          "scripts/ingest_go_api.py",
+          ".github/workflows/ingest_go_api.yml"
+        ],
+        "changes": [
+          "Create 'scripts/ingest_go_api.py' using requests and Supabase client to query Metrolinx API endpoints ('ServiceUpdate/ServiceAlert/All' and 'ServiceUpdate/TripUpdates') with API key '30029868' (configurable via METROLINX_API_KEY).",
+          "Implement Barrie Line filtering ('BR' line / corridor), Toronto timezone normalization for service dates, and idempotent upserts into 'go_api_service_alerts' and 'go_api_trip_updates'.",
+          "Create '.github/workflows/ingest_go_api.yml' scheduled to run every 5-10 minutes with manual workflow_dispatch support using repository secrets SUPABASE_URL and SUPABASE_SERVICE_KEY."
+        ],
+        "verification": [
+          "Running 'python scripts/ingest_go_api.py' locally or via workflow_dispatch fetches data from Metrolinx and successfully populates rows in 'go_api_service_alerts' and 'go_api_trip_updates'.",
+          "Re-running the script does not create duplicate entries for the same alert or trip update timestamp."
+        ]
+      },
+      {
+        "id": "phase-3",
+        "name": "Frontend Data Source Compatibility Layer",
+        "goal": "Expose an optional environment-driven switch in Supabase data client to allow querying the new API data source while preserving fallback to email delay tables.",
+        "files": [
+          "src/lib/supabase.js",
+          ".env.example"
+        ],
+        "newFiles": [],
+        "changes": [
+          "Update 'src/lib/supabase.js' to export TABLE configurable via 'VITE_DELAY_DATA_SOURCE' ('api' -> 'go_api_service_alerts', default -> 'go_train_delays').",
+          "Add adapter mapper in 'src/lib/supabase.js' to map API table fields to the dashboard's expected alert schema (line, direction, delay_minutes, status, message, service_date).",
+          "Document 'VITE_DELAY_DATA_SOURCE' and 'METROLINX_API_KEY' in '.env.example'."
+        ],
+        "verification": [
+          "Dashboard runs and loads existing data from 'go_train_delays' by default.",
+          "When 'VITE_DELAY_DATA_SOURCE=api' is configured, dashboard fetches and displays delay entries from 'go_api_service_alerts' without console errors or visual regressions."
+        ]
+      }
+    ]
+  },
+  "completedPhaseIds": [
+    "phase-1",
+    "phase-2",
+    "phase-3"
+  ],
+  "timestamp": "2026-09-15T15:53:53.709Z"
+}

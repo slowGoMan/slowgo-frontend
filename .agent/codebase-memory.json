@@ -1,0 +1,33 @@
+{
+  "shortDescription": "Real-time delay tracking and GTFS trip analytics dashboard for GO Transit's Barrie Line, deployed to Cloudflare Pages with Supabase.",
+  "techStack": [
+    "React 19 (JSX)",
+    "Vite 8",
+    "Tailwind CSS v4 (@tailwindcss/vite)",
+    "Supabase (@supabase/supabase-js, PostgreSQL, PostgREST, RLS)",
+    "Lucide React",
+    "Python 3.12 (scripts/refresh_gtfs.py, requests)",
+    "GitHub Actions (workflows for GTFS refresh & trip ID resolution)",
+    "Cloudflare Pages (wrangler.jsonc)"
+  ],
+  "architectureRules": [
+    "Frontend data client in src/lib/supabase.js points to Supabase using public VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY; table name constant is exported as TABLE ('go_train_delays').",
+    "Queries strictly select ALERT_COLUMNS to exclude sensitive and bulky raw email payloads (such as raw_body) from client fetches.",
+    "Calendar and daily queries must use Toronto time (torontoToday() via Intl.DateTimeFormat 'en-CA' with 'America/Toronto') rather than UTC to avoid evening date mismatches.",
+    "Delay observations are deduped using dedupeToLatestObservations() keyed on observation_key and ordered by received_at to reflect latest update stages without duplicate counting.",
+    "GTFS reference data (routes, stops, trips, stop_times, calendar) is refreshed weekly via scripts/refresh_gtfs.py and used by Supabase RPC resolve_trip_ids() to map delays to specific train runs.",
+    "Metrolinx Open API integration requires an isolated ingestion path and new dedicated Supabase tables/views to decouple from the legacy email-based 'go_train_delays' table and Cloudflare Worker pipeline."
+  ],
+  "liveRules": [
+    "Timezone shifts: GTFS departure times past midnight are encoded as >= 24:00:00 (e.g. 24:40:00) and belong to the preceding service date (service_date - 1).",
+    "Date parsing: 'YYYY-MM-DD' service_date strings must be parsed into local dates (as done in parseServiceDate) rather than new Date(str) which defaults to UTC midnight.",
+    "Heatmap data isolation: Heatmaps require an independent ~84-90 day window (CALENDAR_WINDOW_DAYS) rather than adopting the active incident feed filter.",
+    "Supabase RLS: The frontend uses the anonymous key which is read-only; table inserts, batch updates, and resolve_trip_ids RPC require SUPABASE_SERVICE_KEY.",
+    "GO Transit Open API documentation mentioned in user prompt was not provided in the repo files; ingestion scripts/endpoints will need the target Metrolinx API schema (e.g., ServiceUpdates, NextService, or GTFS-RT feeds) and request headers.",
+    "The GO Transit Open API documentation mentioned in the user prompt is not stored in the repository; API endpoint specifications (e.g. ServiceUpdates, NextService, or GTFS-RT), query parameters, and header formats (such as key headers) need to be supplied or verified.",
+    "Date parsing: 'YYYY-MM-DD' service_date strings must be parsed into local dates rather than new Date(str) which defaults to UTC midnight."
+  ],
+  "historicalPitfalls": [],
+  "totalRuns": 2,
+  "lastRunDate": "2026-09-15T15:37:06.983Z"
+}

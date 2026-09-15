@@ -12,3 +12,23 @@ Sign-offs auto-accepted during autonomous runs. Nothing here blocked the run —
 - QA concern: Visibility of the tables in the Supabase dashboard cannot be confirmed from a SQL diff alone.
 - web browser visual QA: The screenshot shows the Slowgo CA delay-tracking dashboard web UI (live corridor map, alerts, tracked trips, weekly pattern heatmap), not the Supabase SQL editor, migration output, table list, or RLS policy view. No database schema, migration result, or Supabase table/RLS state is observable in this view, so the phase requirement (SQL migration executing without syntax errors and tables visible with RLS enabled) cannot be confirmed or refuted from this image. The rendered UI itself appears intact with no visible errors, crash dialogs, or unrendered tokens.
 - Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789487333765.png
+
+## 2026-09-15T15:51:29.424Z — 2/3 GO Transit API Ingestion Script and Workflow
+
+### Visual advisories (auto-accepted)
+- QA concern: Default METROLINX_BASE_URL is 'https://api.openmetrolinx.com/OpenDataAPI/pi/V1' — the path segment 'pi' differs from the commonly documented Metrolinx base '/OpenDataAPI/api/V1/'. If the default is wrong the two GETs will 404 and zero rows will be persisted. This is env-overridable (METROLINX_BASE_URL) but the default is unverifiable from the diff alone.
+- QA concern: The feed envelope handling is explicitly a guess (extract_entities docstring: 'The Metrolinx envelope isn't documented in-repo, so accept a bare list...'). If the real payload/field names don't match the candidate keys, the script exits 0 after only printing a WARNING ('no Barrie entities found'), so a 'successful' run may not actually populate any rows. This can only be settled by running against the live API.
+- QA concern: Idempotency depends on the go_api_* tables having UNIQUE constraints matching the on_conflict columns ('alert_id,service_date' and 'trip_id'). Those tables/constraints are defined in supabase/migrations/20250501_go_api_tables.sql, which is NOT in this diff, so the constraint/on_conflict alignment cannot be verified here.
+- QA concern: The trip upsert is keyed on 'trip_id' alone, not a (trip_id, timestamp) pair; whether that matches the phase-1 table's actual unique key (and therefore whether reruns merge vs. error/duplicate) is not determinable from the diff.
+- QA concern: The two named target tables (go_api_service_alerts, go_api_trip_updates) are created by a phase-1 migration that is not part of this change set, so 'successfully populates rows' is contingent on that prior migration having been applied.
+- web browser visual QA: The screenshot shows the SlowGo CA delay dashboard, but it does not display the GO Transit API ingestion script, GitHub Action workflow output, or Supabase tables such as 'go_api_service_alerts' and 'go_api_trip_updates'. There is no visible evidence of script execution, data fetching, table population, or duplicate prevention, so the stated requirement is not observable in this view.
+- Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789487486066.png
+
+## 2026-09-15T15:53:52.933Z — 3/3 Frontend Data Source Compatibility Layer
+
+### Visual advisories (auto-accepted)
+- QA concern: src/lib/supabase.js defines `mapApiAlertsToDashboard` and `API_ALERT_COLUMNS`, but the diff shows no import or call site for either, so the new API-path mapping appears unwired at the consumer level within this change set.
+- QA concern: The comment in supabase.js explicitly says API consumers must select API_ALERT_COLUMNS rather than the go_train_delays-shaped column list, but no dashboard component or query-building code is present in FILES TOUCHED to confirm the API path uses that column list.
+- QA concern: Console-error and visual-regression checks for the API mode are inherently runtime/visual and cannot be settled from this source diff alone.
+- QA concern: README.md documents VITE_DELAY_DATA_SOURCE and METROLINX_API_KEY, but documentation alone does not demonstrate the dashboard display path works against go_api_service_alerts.
+- Screenshot: C:\Users\brian\Projects\slowgo-frontend\.agent\screenshots\web-1789487622048.png
