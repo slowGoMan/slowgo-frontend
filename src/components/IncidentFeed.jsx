@@ -50,7 +50,10 @@ export default function IncidentFeed({ alerts, loading }) {
           </div>
         ) : (
           alerts.map((incident) => {
-            const style = STATUS_STYLE[incident.status] || STATUS_STYLE.delayed;
+            // Unknown/raw statuses (e.g. a Metrolinx Category that slipped
+            // past normalization) render as a neutral advisory, never as a
+            // delay badge - non-trip notices must not look like train delays.
+            const style = STATUS_STYLE[incident.status] || STATUS_STYLE.advisory;
             const Icon = style.icon;
 
             return (

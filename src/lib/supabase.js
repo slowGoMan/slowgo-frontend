@@ -45,6 +45,43 @@ function apiAlertDirection(row) {
   return null;
 }
 
+// Statuses the dashboard components understand natively (IncidentFeed's
+// STATUS_STYLE keys). Anything else is a raw Metrolinx Category value
+// ('Service Disruption', 'Amenity', ...) - either stored before ingestion
+// started normalizing, or a genuinely new bucket - and must only render as
+// a delay when it actually names trips AND reports delay minutes.
+const DASHBOARD_STATUSES = new Set(['delayed', 'cancelled', 'canceled', 'modified', 'advisory', 'resolved']);
+
+function apiAlertRaw(row) {
+  let raw = row.raw_json;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  return raw && typeof raw === 'object' ? raw : null;
+}
+
+// Metrolinx alerts list affected trips under 'Trips' (empty [] for general
+// advisories); a missing/empty list means this is a bulletin, not a delay.
+function apiAlertHasTrips(raw) {
+  if (!raw) return false;
+  const trips = raw.Trips ?? raw.trips ?? raw.Trip ?? raw.trip;
+  if (Array.isArray(trips)) return trips.length > 0;
+  return trips != null;
+}
+
+function normalizeApiStatus(row, raw) {
+  const status = String(row.status || 'advisory').toLowerCase();
+  if (DASHBOARD_STATUSES.has(status)) return status;
+  // Legacy raw Category without trip associations or delay minutes is a
+  // non-trip notice: classify as 'advisory' instead of letting the feed's
+  // unknown-status fallback render it as a delay.
+  return apiAlertHasTrips(raw) && (row.delay_minutes ?? null) !== null ? 'delayed' : 'advisory';
+}
+
 // Map a go_api_service_alerts row into the alert schema the dashboard
 // components expect: line, direction, delay_minutes, status, message and
 // service_date, plus the derived fields StatsBar / IncidentFeed / Heatmap
@@ -57,7 +94,8 @@ function apiAlertDirection(row) {
 // negative-offset timezone.
 export function mapApiAlertToDashboard(row) {
   if (!row) return null;
-  const status = String(row.status || 'advisory').toLowerCase();
+  const raw = apiAlertRaw(row);
+  const status = normalizeApiStatus(row, raw);
   const isCancellation = status === 'cancelled' || status === 'canceled';
   return {
     id: `${row.alert_id}:${row.service_date}`,

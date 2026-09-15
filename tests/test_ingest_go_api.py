@@ -120,6 +120,10 @@ class MapAlertTests(unittest.TestCase):
             "SubjectEnglish": "Barrie line delay",
             "BodyEnglish": "Train 968 is holding at Bradford.",
             "Lines": [{"Code": "BR"}],
+            # A train-run delay names its affected trips; advisories carry
+            # an empty Trips list and get normalized to 'advisory' instead.
+            "Trips": [{"TripNumber": "968"}],
+            "delayMinutes": 15,
             "startServiceDate": "2025-05-01",
             "endServiceDate": "2025-05-01",
         }
@@ -169,6 +173,57 @@ class MapAlertTests(unittest.TestCase):
             [r["service_date"] for r in rows],
             ["2025-08-15", "2025-08-16", "2025-08-17"],
         )
+
+    def test_non_trip_advisory_normalized_to_advisory_status(self):
+        # General advisories (empty Trips, Amenity/Information/bus-detour
+        # buckets) must surface as 'advisory', never the raw Metrolinx
+        # Category, so the frontend renders a neutral notice badge instead
+        # of a delay.
+        advisory_cases = [
+            # Empty Trips + raw Category -> advisory.
+            {
+                "Code": "1",
+                "Category": "Service Disruption",
+                "SubCategory": "Information",
+                "SubjectEnglish": "Multi-week construction notice",
+                "Lines": [{"Code": "BR"}],
+                "Trips": [],
+            },
+            # Amenity category -> advisory even with a Trips list present.
+            {
+                "Code": "2",
+                "Category": "Amenity",
+                "SubCategory": "Elevator-Escalator Disruption",
+                "SubjectEnglish": "Elevator out of service",
+                "Lines": [{"Code": "BR"}],
+                "Trips": [{"TripNumber": "968"}],
+            },
+            # Bus-detour subcategory -> advisory.
+            {
+                "Code": "3",
+                "Category": "Service Disruption",
+                "SubCategory": "Modified Trip - Bus Detour",
+                "SubjectEnglish": "Bus detour on Barrie route",
+                "Lines": [{"Code": "BR"}],
+            },
+        ]
+        for alert in advisory_cases:
+            rows = ingest.map_alert(alert)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["status"], "advisory")
+
+        # A real train delay (Trips present + delay minutes, no advisory
+        # bucket) keeps its raw Category - only non-trip notices collapse.
+        delay_alert = {
+            "Code": "9",
+            "Category": "Service Disruption",
+            "SubjectEnglish": "Barrie train 968 delayed",
+            "Lines": [{"Code": "BR"}],
+            "Trips": [{"TripNumber": "968"}],
+            "delayMinutes": 12,
+        }
+        rows = ingest.map_alert(delay_alert)
+        self.assertEqual(rows[0]["status"], "Service Disruption")
 
 
 class MapTripUpdateTests(unittest.TestCase):
@@ -270,6 +325,7 @@ class MainFlowTests(unittest.TestCase):
                         "SubjectEnglish": "Barrie line delay",
                         "BodyEnglish": "Holding at Bradford.",
                         "Lines": [{"Code": "BR"}],
+                        "Trips": [{"TripNumber": "968"}],
                         "startServiceDate": "2025-05-01",
                         "endServiceDate": "2025-05-01",
                     },

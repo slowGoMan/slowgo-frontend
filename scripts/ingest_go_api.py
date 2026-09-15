@@ -327,6 +327,32 @@ def apply_gtfs_day_shift(service_day, time_str):
     return service_day
 
 
+# Non-trip bulletins: alerts with no Trips list, or in the
+# Amenity/Information/bus-detour buckets, are general system advisories
+# (multi-week construction notices, elevator/escalator disruptions, bus
+# detours). Their raw Metrolinx Category ('Service Disruption' / 'Amenity')
+# must not surface as a train-run delay downstream, so status normalizes to
+# 'advisory'.
+ADVISORY_CATEGORIES = {"amenity"}
+ADVISORY_SUBCATEGORIES = {
+    "information",
+    "elevator-escalator disruption",
+    "modified trip - bus detour",
+}
+
+
+def is_non_trip_advisory(alert, category, subcategory):
+    """True for notices with no trip association or in advisory buckets."""
+    trips = alert.get("Trips") or alert.get("trips") or alert.get("Trip")
+    if not as_list(trips):
+        return True
+    if category is not None and str(category).strip().lower() in ADVISORY_CATEGORIES:
+        return True
+    if subcategory is not None and str(subcategory).strip().lower() in ADVISORY_SUBCATEGORIES:
+        return True
+    return False
+
+
 def map_alert(alert):
     """Map one ServiceUpdates Message into (alert_id, service_date) rows.
 
@@ -342,7 +368,10 @@ def map_alert(alert):
         return []
     delay = to_int(_get(alert, "delayMinutes", "delay_minutes", "DelayMinutes", "delay"))
     category = _get(alert, "Category", "category", "AlertType", "alert_type")
+    subcategory = _get(alert, "SubCategory", "sub_category", "Subcategory", "subcategory")
     status = _get(alert, "status", "alertStatus", "AlertStatus") or category
+    if is_non_trip_advisory(alert, category, subcategory):
+        status = "advisory"
     if status is not None:
         status = str(status)[:100]
     subject = _get(alert, "SubjectEnglish", "subjectEnglish", "subject", "headline", "Headline")
