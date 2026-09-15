@@ -1,0 +1,40 @@
+# .github/workflows/ingest_go_api.yml
+# Polls the Metrolinx Open Data API (ServiceUpdates + TripUpdates) and upserts
+# Barrie-line delays into Supabase's go_api_* tables.
+# Free: github-hosted runners are free, each run is two HTTP fetches + a
+# small upsert, so a 5-10 minute cadence is cheap.
+# Requires SUPABASE_URL / SUPABASE_SERVICE_KEY secrets (same as the other
+# workflows). METROLINX_API_KEY is optional - ingest_go_api.py defaults to
+# the Barrie demo key when the secret is unset.
+
+name: Ingest GO Transit API (Barrie)
+
+on:
+  schedule:
+    - cron: "*/8 * * * *"   # every 8 minutes (within the 5-10 min window)
+  workflow_dispatch:        # manual "Run workflow" button for testing
+
+concurrency:
+  group: ingest-go-api
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install requests
+
+      - name: Ingest GO Transit API
+        env:
+          METROLINX_API_KEY: ${{ secrets.METROLINX_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/ingest_go_api.py
